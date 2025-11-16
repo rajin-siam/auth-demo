@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
-import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +32,8 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String createAccessToken(User user) {
+    // Generate access token
+    public String generateAccessToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", user.getRole().name());
         claims.put("userId", user.getId());
@@ -48,8 +48,8 @@ public class JwtService {
                 .compact();
     }
 
-    // Create refresh token (simpler, just email)
-    public String createRefreshToken(User user) {
+    // Generate refresh token
+    public String generateRefreshToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("type", "refresh");
 
@@ -67,6 +67,11 @@ public class JwtService {
         return parseToken(token).getSubject();
     }
 
+    // Extract email (alias for getEmailFromToken for consistency)
+    public String extractEmail(String token) {
+        return getEmailFromToken(token);
+    }
+
     // Get role from token
     public String getRoleFromToken(String token) {
         return parseToken(token).get("role", String.class);
@@ -77,6 +82,7 @@ public class JwtService {
         return parseToken(token).get("userId", Long.class);
     }
 
+    // Validate token
     public boolean isTokenValid(String token) {
         try {
             Claims claims = parseToken(token);
@@ -87,6 +93,7 @@ public class JwtService {
         }
     }
 
+    // Check if token is refresh token
     public boolean isRefreshToken(String token) {
         try {
             String type = parseToken(token).get("type", String.class);
@@ -96,6 +103,7 @@ public class JwtService {
         }
     }
 
+    // Check if token is access token
     public boolean isAccessToken(String token) {
         try {
             String type = parseToken(token).get("type", String.class);
@@ -105,6 +113,7 @@ public class JwtService {
         }
     }
 
+
     // Parse the token and get all claims
     private Claims parseToken(String token) {
         return Jwts.parser()
@@ -113,5 +122,4 @@ public class JwtService {
                 .parseSignedClaims(token)
                 .getPayload();
     }
-
 }
