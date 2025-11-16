@@ -13,35 +13,21 @@ public class RedisTokenService {
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final String BLACKLIST_PREFIX = "blacklist:access:";
-    private static final String REFRESH_TOKEN_PREFIX = "refresh:";
 
-    // Blacklist an access token
+    /**
+     * Blacklist an access token in Redis
+     * The token will be stored until its natural expiration time
+     */
     public void blacklistToken(String accessToken, long expirationMs) {
         String key = BLACKLIST_PREFIX + accessToken;
         redisTemplate.opsForValue().set(key, "revoked", expirationMs, TimeUnit.MILLISECONDS);
     }
 
-    // Check if access token is blacklisted
+    /**
+     * Check if an access token is blacklisted
+     */
     public boolean isAccessTokenBlacklisted(String accessToken) {
         String key = BLACKLIST_PREFIX + accessToken;
         return Boolean.TRUE.equals(redisTemplate.hasKey(key));
-    }
-
-    // Save refresh token
-    public void saveRefreshToken(String userEmail, String refreshToken, long expirationMs) {
-        String key = REFRESH_TOKEN_PREFIX + userEmail;
-        redisTemplate.opsForValue().set(key, refreshToken, expirationMs, TimeUnit.MILLISECONDS);
-    }
-
-    // Get refresh token by user email
-    public String getRefreshToken(String userEmail) {
-        String key = REFRESH_TOKEN_PREFIX + userEmail;
-        return redisTemplate.opsForValue().get(key);
-    }
-
-    // Delete refresh token (for logout)
-    public void deleteRefreshToken(String userEmail) {
-        String key = REFRESH_TOKEN_PREFIX + userEmail;
-        redisTemplate.delete(key);
     }
 }
