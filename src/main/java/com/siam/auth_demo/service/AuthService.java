@@ -3,12 +3,14 @@ package com.siam.auth_demo.service;
 import com.siam.auth_demo.dto.AuthResponse;
 import com.siam.auth_demo.dto.LoginRequest;
 import com.siam.auth_demo.dto.RegisterRequest;
+import com.siam.auth_demo.entity.RefreshToken;
 import com.siam.auth_demo.entity.Role;
 import com.siam.auth_demo.entity.User;
 import com.siam.auth_demo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -17,8 +19,10 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final RedisTokenService redisTokenService;
 
+    @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already exists");
@@ -35,6 +39,7 @@ public class AuthService {
         return generateAuthResponse(user);
     }
 
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         var user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid credentials"));
@@ -46,44 +51,61 @@ public class AuthService {
         return generateAuthResponse(user);
     }
 
-    public AuthResponse refreshToken(String refreshToken) {
-        if (!jwtService.isTokenValid(refreshToken)) {
-            throw new RuntimeException("Invalid or expired refresh token");
-        }
+    @Transactional
+    public AuthResponse refreshToken(String refreshTokenString) {
+        // Validate the refresh token from database
+        RefreshToken refreshToken = refreshTokenService.validateRefreshToken(refreshTokenString);
 
-        String userEmail = jwtService.extractEmail(refreshToken);
-        String storedToken = redisTokenService.getRefreshToken(userEmail);
+        User user = refreshToken.getUser();
 
-        if (storedToken == null || !storedToken.equals(refreshToken)) {
-            throw new RuntimeException("Invalid refresh token");
-        }
+        // Generate new access token
+        String newAccessToken = jwtService.generateAccessToken(user);
 
-        var user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        // Optionally rotate refresh token (more secure)
+        RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
 
-        return generateAuthResponse(user);
+        return AuthResponse.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken.getToken())
+                .tokenType("Bearer")
+                .expiresIn(jwtService.getAccessTokenExpiration() / 1000)
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .build();
     }
 
+    @Transactional
     public void logout(String email, String accessToken) {
-        redisTokenService.deleteRefreshToken(email);
-        long remainingTime = jwtService.getAccessTokenExpiration();
-        redisTokenService.blacklistToken(accessToken, remainingTime);
+        var user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Delete refresh token from database
+        refreshTokenService.deleteUserRefreshToken(user);
+
+        // Blacklist the access token in Redis
+        long remainingTime = jwtService.getRemainingExpirationTime(accessToken);
+        if (remainingTime > 0) {
+            redisTokenService.blacklistToken(accessToken, remainingTime);
+        }
     }
 
     public void revokeToken(String accessToken) {
-        long remainingTime = jwtService.getAccessTokenExpiration();
-        redisTokenService.blacklistToken(accessToken, remainingTime);
+        long remainingTime = jwtService.getRemainingExpirationTime(accessToken);
+        if (remainingTime > 0) {
+            redisTokenService.blacklistToken(accessToken, remainingTime);
+        }
     }
 
     private AuthResponse generateAuthResponse(User user) {
+        // Generate access token (JWT)
         String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
 
-        redisTokenService.saveRefreshToken(user.getEmail(), refreshToken, 604800000L);
+        // Generate refresh token (random string stored in database)
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
         return AuthResponse.builder()
                 .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .refreshToken(refreshToken.getToken())
                 .tokenType("Bearer")
                 .expiresIn(jwtService.getAccessTokenExpiration() / 1000)
                 .email(user.getEmail())
