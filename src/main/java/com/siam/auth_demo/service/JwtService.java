@@ -54,25 +54,12 @@ public class JwtService {
     }
 
     /**
-     * Extract email (alias for consistency)
-     */
-    public String extractEmail(String token) {
-        return getEmailFromToken(token);
-    }
-
-    /**
      * Get role from token
      */
     public String getRoleFromToken(String token) {
         return parseToken(token).get("role", String.class);
     }
 
-    /**
-     * Get user ID from token
-     */
-    public Long getUserIdFromToken(String token) {
-        return parseToken(token).get("userId", Long.class);
-    }
 
     /**
      * Validate token
