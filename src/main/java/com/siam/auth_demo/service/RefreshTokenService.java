@@ -3,6 +3,7 @@ package com.siam.auth_demo.service;
 import com.siam.auth_demo.entity.RefreshToken;
 import com.siam.auth_demo.entity.User;
 import com.siam.auth_demo.repository.RefreshTokenRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
     private static final SecureRandom secureRandom = new SecureRandom();
+    private final EntityManager entityManager;
 
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
@@ -37,7 +39,11 @@ public class RefreshTokenService {
     @Transactional
     public RefreshToken createRefreshToken(User user) {
         // Delete existing refresh token for this user (one-to-one relationship)
-        refreshTokenRepository.findByUser(user).ifPresent(refreshTokenRepository::delete);
+        refreshTokenRepository.findByUser(user).ifPresent( existingToken -> {
+            refreshTokenRepository.delete(existingToken);
+            entityManager.flush();
+        });
+
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .token(generateRandomToken())
@@ -86,20 +92,5 @@ public class RefreshTokenService {
     @Transactional
     public void deleteUserRefreshToken(User user) {
         refreshTokenRepository.deleteByUser(user);
-    }
-
-    /**
-     * Delete expired tokens (for cleanup jobs)
-     */
-    @Transactional
-    public void deleteExpiredTokens() {
-        refreshTokenRepository.deleteByExpirationDateBefore(LocalDateTime.now());
-    }
-
-    /**
-     * Get refresh token by user
-     */
-    public RefreshToken getRefreshTokenByUser(User user) {
-        return refreshTokenRepository.findByUser(user).orElse(null);
     }
 }
